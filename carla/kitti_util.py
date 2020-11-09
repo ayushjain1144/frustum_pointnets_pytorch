@@ -10,7 +10,7 @@ from __future__ import print_function
 import numpy as np
 import cv2
 import os
-import pickle
+
 class Object3d(object):
     ''' 3d object label '''
     def __init__(self, label_file_line):
@@ -19,9 +19,9 @@ class Object3d(object):
 
         # extract label, truncation, occlusion
         self.type = data[0] # 'Car', 'Pedestrian', ...
-        self.truncation = data[1] # truncated pixel ratio [0..1]
-        self.occlusion = data[2] # 0=visible, 1=partly occluded, 2=fully occluded, 3=unknown
-        self.alpha = data[3] # object observation angle [-pi..pi] # deal with this later if needed
+        self.truncation = 0 # truncated pixel ratio [0..1]
+        self.occlusion = 3 # 0=visible, 1=partly occluded, 2=fully occluded, 3=unknown
+        self.alpha = data[3] # object observation angle [-pi..pi]
 
         # extract 2d bounding box in 0-based coordinates
         self.xmin = data[4] # left
@@ -81,24 +81,21 @@ class Calibration(object):
         TODO(rqi): do matrix multiplication only once for each projection.
     '''
     def __init__(self, calib_filepath, from_video=False):
-        calibs = self.read_calib_file(calib_filepath)
+        if from_video:
+            calibs = self.read_calib_from_video(calib_filepath)
+        else:
+            calibs = self.read_calib_file(calib_filepath)
         # Projection matrix from rect camera coord to image2 coord
-        self.pix_T_cam = calibs['pix_T_cam'][:3, :] 
-        self.pix_T_cam = np.reshape(self.pix_T_cam, [3,4])
-        self.P = self.pix_T_cam
+        self.P = calibs['P2'] 
+        self.P = np.reshape(self.P, [3,4])
         # Rigid transform from Velodyne coord to reference camera coord
-        self.camX_T_origin = calibs['camX_T_origin']
-        self.V2C = self.camX_T_origin[:3, :]
+        self.V2C = calibs['Tr_velo_to_cam']
         self.V2C = np.reshape(self.V2C, [3,4])
         self.C2V = inverse_rigid_trans(self.V2C)
-        self.origin_T_camX = self.C2V
-
         # Rotation from reference camera coord to rect camera coord
-        self.camX_T_camR = calibs['camX_T_camR']
-        # self.R0 = calibs['R0_rect']
-        self.R0 = self.camX_T_origin[:3, :3]
+        self.R0 = calibs['R0_rect']
         self.R0 = np.reshape(self.R0,[3,3])
-        
+
         # Camera intrinsics and extrinsics
         self.c_u = self.P[0,2]
         self.c_v = self.P[1,2]
@@ -126,6 +123,20 @@ class Calibration(object):
 
         return data
     
+    def read_calib_from_video(self, calib_root_dir):
+        ''' Read calibration for camera 2 from video calib files.
+            there are calib_cam_to_cam and calib_velo_to_cam under the calib_root_dir
+        '''
+        data = {}
+        cam2cam = self.read_calib_file(os.path.join(calib_root_dir, 'calib_cam_to_cam.txt'))
+        velo2cam = self.read_calib_file(os.path.join(calib_root_dir, 'calib_velo_to_cam.txt'))
+        Tr_velo_to_cam = np.zeros((3,4))
+        Tr_velo_to_cam[0:3,0:3] = np.reshape(velo2cam['R'], [3,3])
+        Tr_velo_to_cam[:,3] = velo2cam['T']
+        data['Tr_velo_to_cam'] = np.reshape(Tr_velo_to_cam, [12])
+        data['R0_rect'] = cam2cam['R_rect_00']
+        data['P2'] = cam2cam['P_rect_02']
+        return data
 
     def cart2hom(self, pts_3d):
         ''' Input: nx3 points in Cartesian
@@ -257,12 +268,6 @@ def read_label(label_filename):
 
 def load_image(img_filename):
     return cv2.imread(img_filename)
-
-# for carla and replica
-def load_pc(filename):
-    pc = np.load(filename, allow_pickle=True)
-    pc = pc.reshape((-1, 3))
-    return pc
 
 def load_velo_scan(velo_filename):
     scan = np.fromfile(velo_filename, dtype=np.float32)
