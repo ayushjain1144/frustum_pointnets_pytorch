@@ -5,7 +5,7 @@ import cv2
 import os
 import numpy as np
 from matplotlib import cm
-import hyperparams as hyp
+# import hyperparams as hyp
 import utils_geom
 import utils_vox
 import utils_py

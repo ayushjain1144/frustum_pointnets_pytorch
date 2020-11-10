@@ -1,5 +1,5 @@
 import torch
-import hyperparams as hyp
+# import hyperparams as hyp
 import numpy as np
 import utils_geom
 import utils_samp

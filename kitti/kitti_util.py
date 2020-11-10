@@ -48,10 +48,10 @@ class Object3d(object):
             (self.type, self.truncation, self.occlusion, self.alpha))
         print('2d bbox (x0,y0,x1,y1): %f, %f, %f, %f' % \
             (self.xmin, self.ymin, self.xmax, self.ymax))
-        print('3d bbox h,w,l: %f, %f, %f' % \
-            (self.h, self.w, self.l))
-        print('3d bbox location, ry: (%f, %f, %f), %f' % \
-            (self.t[0],self.t[1],self.t[2],self.ry))
+        # print('3d bbox h,w,l: %f, %f, %f' % \
+        #     (self.h, self.w, self.l))
+        # print('3d bbox location, ry: (%f, %f, %f), %f' % \
+        #     (self.t[0],self.t[1],self.t[2],self.ry))
 
 
 class Calibration(object):
@@ -327,11 +327,11 @@ def compute_box_3d(obj, P):
             corners_2d: (8,2) array in left image coord.
             corners_3d: (8,3) array in in rect camera coord.
     '''
-    st()
+    # st()
     pix_T_cam = np.zeros((4, 4))
     pix_T_cam[:3, :] = P
     pix_T_cam[3] = [0, 0, 0, 1]
-    corners_3d = numpy.array(obj.box3d).reshape((8, 3))
+    corners_3d = np.array(obj.box3d).reshape((8, 3))
     # corners_3d = utils_geom.transform_boxes3D_to_corners_py(box)
     corners_3d_in_2d = utils_geom.apply_pix_T_cam(torch.from_numpy(pix_T_cam).unsqueeze(0), torch.from_numpy(corners_3d).unsqueeze(0))
 
