@@ -43,7 +43,7 @@ for i in range(NUM_SIZE_CLUSTER):
     g_mean_size_arr[i,:] = g_type_mean_size[g_class2type[i]]
 
 class PointNetInstanceSeg(nn.Module):
-    def __init__(self,n_classes=3,n_channel=4):
+    def __init__(self,n_classes=3,n_channel=3):
         '''v1 3D Instance Segmentation PointNet
         :param n_classes:3
         :param one_hot_vec:[bs,n_classes]
@@ -188,7 +188,7 @@ class STNxyz(nn.Module):
         return x
 
 class FrustumPointNetv1(nn.Module):
-    def __init__(self,n_classes=3,n_channel=4):
+    def __init__(self,n_classes=3,n_channel=3):
         super(FrustumPointNetv1, self).__init__()
         self.n_classes = n_classes
         self.InsSeg = PointNetInstanceSeg(n_classes=3,n_channel=n_channel)

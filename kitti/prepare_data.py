@@ -335,6 +335,8 @@ def extract_frustum_data(idx_filename, split, output_filename, viz=False,
                 box3d_list.append(box3d_pts_3d)
                 input_list.append(pc_in_box_fov)
                 label_list.append(label)
+                if objects[obj_idx].type == 'car':
+                    objects[obj_idx].type = 'Car'
                 type_list.append(objects[obj_idx].type)
                 heading_list.append(heading_angle)
                 box3d_size_list.append(box3d_size)

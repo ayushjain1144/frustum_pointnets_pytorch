@@ -20,7 +20,7 @@ import provider_fpointnet as provider
 
 parser = argparse.ArgumentParser()
 ###parser.add_argument('--gpu', type=int, default=0, help='GPU to use [default: GPU 0]')
-parser.add_argument('--model', default='frustum_pointnets_v1_old_1', help='Model name [default: frustum_pointnets_v1]')
+parser.add_argument('--model', default='frustum_pointnets_v1_old', help='Model name [default: frustum_pointnets_v1]')
 parser.add_argument('--log_dir', default='log', help='Log dir [default: log]')
 parser.add_argument('--num_point', type=int, default=1024, help='Point Number [default: 2048]')
 parser.add_argument('--max_epoch', type=int, default=150, help='Epoch to run [default: 201]')
@@ -270,8 +270,8 @@ def train():
     blue = lambda x: '\033[94m' + x + '\033[0m'
 
     # set model
-    if FLAGS.model == 'frustum_pointnets_v1_old_1':
-        from frustum_pointnets_v1_old_1 import FrustumPointNetv1
+    if FLAGS.model == 'frustum_pointnets_v1_old':
+        from frustum_pointnets_v1_old import FrustumPointNetv1
         FrustumPointNet = FrustumPointNetv1(n_classes=n_classes).cuda()
 
     # load pre-trained model
