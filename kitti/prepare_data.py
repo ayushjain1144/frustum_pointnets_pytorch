@@ -1,3 +1,8 @@
+''' Prepare KITTI data for 3D object detection.
+
+Author: Charles R. Qi
+Date: September 2017
+'''
 from __future__ import print_function
 
 import os
@@ -15,6 +20,7 @@ from kitti_object import *
 import argparse
 import ipdb
 from tqdm import tqdm
+st = ipdb.set_trace
 
 def in_hull(p, hull):
     from scipy.spatial import Delaunay
@@ -24,6 +30,7 @@ def in_hull(p, hull):
 
 def extract_pc_in_box3d(pc, box3d):
     ''' pc: (N,3), box3d: (8,3) '''
+    # st()
     box3d_roi_inds = in_hull(pc[:,0:3], box3d)
     return pc[box3d_roi_inds,:], box3d_roi_inds
 
@@ -36,6 +43,179 @@ def extract_pc_in_box2d(pc, box2d):
     box2d_corners[3,:] = [box2d[0],box2d[3]] 
     box2d_roi_inds = in_hull(pc[:,0:2], box2d_corners)
     return pc[box2d_roi_inds,:], box2d_roi_inds
+
+def demo_object(data_idx=11,object_idx=0):
+    import mayavi.mlab as mlab
+    from viz_util import draw_lidar, draw_lidar_simple, draw_gt_boxes3d
+    def draw_3d_object(pc, color=None):
+        ''' Draw lidar points. simplest set up. '''
+        fig = mlab.figure(figure=None, bgcolor=(0, 0, 0), fgcolor=None, engine=None, size=(1600, 1000))
+        if color is None: color = (pc[:, 2] - np.min(pc[:,2])) / (np.max(pc[: , 2])-np.min(pc[:, 2]))
+        # draw points
+        #nodes = mlab.points3d(pc[:, 0], pc[:, 1], pc[:, 2], colormap='gnuplot', scale_factor=0.04,
+        #                  figure=fig)
+        #nodes.mlab_source.dataset.point_data.scalars = color
+        pts = mlab.pipeline.scalar_scatter(pc[:, 0], pc[:, 1], pc[:, 2])
+        pts.add_attribute(color, 'colors')
+        pts.data.point_data.set_active_scalars('colors')
+        g = mlab.pipeline.glyph(pts)
+        g.glyph.glyph.scale_factor = 0.05  # set scaling for all the points
+        g.glyph.scale_mode = 'data_scaling_off'  # make all the points same size
+        # draw origin
+        mlab.points3d(0, 0, 0, color=(1, 1, 1), mode='sphere', scale_factor=0.2)
+        # draw axis
+        axes = np.array([
+            [2., 0., 0., 0.],
+            [0., 2., 0., 0.],
+            [0., 0., 2., 0.],
+        ], dtype=np.float64)
+        mlab.plot3d([0, axes[0, 0]], [0, axes[0, 1]], [0, axes[0, 2]], color=(1, 0, 0), tube_radius=None, figure=fig)
+        mlab.plot3d([0, axes[1, 0]], [0, axes[1, 1]], [0, axes[1, 2]], color=(0, 1, 0), tube_radius=None, figure=fig)
+        mlab.plot3d([0, axes[2, 0]], [0, axes[2, 1]], [0, axes[2, 2]], color=(0, 0, 1), tube_radius=None, figure=fig)
+        mlab.view(azimuth=180, elevation=70, focalpoint=[12.0909996, -1.04700089, -2.03249991], distance=62.0,
+                  figure=fig)
+        return fig
+
+    dataset = kitti_object(os.path.join(ROOT_DIR, 'dataset/KITTI/object'))
+    objects = dataset.get_label_objects(data_idx)
+    obj = objects[object_idx]
+    obj.print_object()
+    calib = dataset.get_calibration(data_idx)#utils.Calibration(calib_filename)
+    box2d = obj.box2d
+    xmin, ymin, xmax, ymax = box2d
+    cx, cy = (xmin + xmax) / 2, (ymin + ymax) / 2
+    w, l = xmax - xmin, ymax - ymin
+    # box3d
+    x, y, z = obj.t
+    # show 3d
+    pc_velo = dataset.get_lidar(data_idx)[:, 0:3]
+    pc_rect = calib.project_velo_to_rect(pc_velo)
+    pc_norm = pc_rect - obj.t
+    keep = []
+    for i in range(len(pc_norm)):
+        if np.sum(pc_norm[i]**2) < 4:
+            keep.append(i)
+    pc_keep = pc_norm[keep,:]
+    pc_keep[:,1] *= -1
+    pc_keep = pc_keep[:,[0,2,1]]
+    fig = draw_3d_object(pc_keep)
+
+    box3d_pts_2d, box3d_pts_3d = utils.compute_box_3d(objects[object_idx], calib.P)
+    box3d_pts_3d -= obj.t
+    box3d_pts_3d[:,1] *= -1
+    box3d_pts_3d = box3d_pts_3d[:,[0,2,1]]
+    draw_gt_boxes3d([box3d_pts_3d], fig=fig, draw_text=False)
+    input()
+
+def demo(data_idx=11,object_idx=0,show_images=True,show_lidar=True,show_lidar_2d=True,show_lidar_box=True,show_project=True,show_lidar_frustum=True):
+    import mayavi.mlab as mlab
+    from viz_util import draw_lidar, draw_lidar_simple, draw_gt_boxes3d
+    dataset = kitti_object(os.path.join(ROOT_DIR, 'dataset/KITTI/object'))
+
+    # Load data from dataset
+    objects = dataset.get_label_objects(data_idx)#objects = [Object3d(line) for line in lines]
+    objects[object_idx].print_object()
+
+    calib = dataset.get_calibration(data_idx)#utils.Calibration(calib_filename)
+    box2d = objects[object_idx].box2d
+    xmin, ymin, xmax, ymax = box2d
+    box2d_center = np.array([(xmin + xmax) / 2.0, (ymin + ymax) / 2.0])
+    uvdepth = np.zeros((1, 3))
+    uvdepth[0, 0:2] = box2d_center
+    uvdepth[0, 2] = 20  # some random depth
+    box2d_center_rect = calib.project_image_to_rect(uvdepth)
+    frustum_angle = -1 * np.arctan2(box2d_center_rect[0, 2],
+                                    box2d_center_rect[0, 0])
+    print('frustum_angle:',frustum_angle)
+    '''
+    Type, truncation, occlusion, alpha: Pedestrian, 0, 0, -0.200000
+    2d bbox (x0,y0,x1,y1): 712.400000, 143.000000, 810.730000, 307.920000
+    3d bbox h,w,l: 1.890000, 0.480000, 1.200000
+    3d bbox location, ry: (1.840000, 1.470000, 8.410000), 0.010000
+    '''
+    img = dataset.get_image(data_idx)#(370, 1224, 3)
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    img_height, img_width, img_channel = img.shape
+    print(('Image shape: ', img.shape))
+    pc_velo = dataset.get_lidar(data_idx)[:,0:3]#(115384, 3)
+    calib = dataset.get_calibration(data_idx)#utils.Calibration(calib_filename)
+
+    ## Draw lidar in rect camera coord
+    #print(' -------- LiDAR points in rect camera coordination --------')
+    #pc_rect = calib.project_velo_to_rect(pc_velo)
+    #fig = draw_lidar_simple(pc_rect)
+    #raw_input()
+    # Draw 2d and 3d boxes on image
+    if show_images:
+        print(' -------- 2D/3D bounding boxes in images --------')
+        show_image_with_boxes(img, objects, calib)
+        raw_input()
+
+    if show_lidar:
+        # Show all LiDAR points. Draw 3d box in LiDAR point cloud
+        print(' -------- LiDAR points and 3D boxes in velodyne coordinate --------')
+        #show_lidar_with_boxes(pc_velo, objects, calib)
+        #raw_input()
+        show_lidar_with_boxes(pc_velo, objects, calib, True, img_width, img_height)
+        raw_input()
+
+    if show_lidar_2d:
+        # Visualize LiDAR points on images
+        print(' -------- LiDAR points projected to image plane --------')
+        show_lidar_on_image(pc_velo, img, calib, img_width, img_height, showtime=True)
+        raw_input()
+
+    if show_lidar_box:
+        # Show LiDAR points that are in the 3d box
+        print(' -------- LiDAR points in a 3D bounding box --------')
+        box3d_pts_2d, box3d_pts_3d = utils.compute_box_3d(objects[object_idx], calib.P)
+        box3d_pts_3d_velo = calib.project_rect_to_velo(box3d_pts_3d)
+        box3droi_pc_velo, _ = extract_pc_in_box3d(pc_velo, box3d_pts_3d_velo)
+        print(('Number of points in 3d box: ', box3droi_pc_velo.shape[0]))
+
+        fig = mlab.figure(figure=None, bgcolor=(0,0,0),
+            fgcolor=None, engine=None, size=(1000, 500))
+        draw_lidar(box3droi_pc_velo, fig=fig)
+        draw_gt_boxes3d([box3d_pts_3d_velo], fig=fig)
+        mlab.show(1)
+        raw_input()
+
+    if show_project:
+        # UVDepth Image and its backprojection to point clouds
+        print(' -------- LiDAR points in a frustum from a 2D box --------')
+        imgfov_pc_velo, pts_2d, fov_inds = get_lidar_in_image_fov(pc_velo,
+            calib, 0, 0, img_width, img_height, True)
+        imgfov_pts_2d = pts_2d[fov_inds,:]
+        imgfov_pc_rect = calib.project_velo_to_rect(imgfov_pc_velo)
+
+        cameraUVDepth = np.zeros_like(imgfov_pc_rect)
+        cameraUVDepth[:,0:2] = imgfov_pts_2d
+        cameraUVDepth[:,2] = imgfov_pc_rect[:,2]
+
+        # Show that the points are exactly the same
+        backprojected_pc_velo = calib.project_image_to_velo(cameraUVDepth)
+        print(imgfov_pc_velo[0:20])
+        print(backprojected_pc_velo[0:20])
+
+        fig = mlab.figure(figure=None, bgcolor=(0,0,0),
+            fgcolor=None, engine=None, size=(1000, 500))
+        draw_lidar(backprojected_pc_velo, fig=fig)
+        raw_input()
+
+    if show_lidar_frustum:
+        # Only display those points that fall into 2d box
+        print(' -------- LiDAR points in a frustum from a 2D box --------')
+        xmin,ymin,xmax,ymax = \
+            objects[object_idx].xmin, objects[object_idx].ymin, objects[object_idx].xmax, objects[object_idx].ymax
+        boxfov_pc_velo = \
+            get_lidar_in_image_fov(pc_velo, calib, xmin, ymin, xmax, ymax)
+        print(('2d box FOV point num: ', boxfov_pc_velo.shape[0]))
+
+        fig = mlab.figure(figure=None, bgcolor=(0,0,0),
+            fgcolor=None, engine=None, size=(1000, 500))
+        draw_lidar(boxfov_pc_velo, fig=fig)
+        mlab.show(1)
+        raw_input()
 
 def random_shift_box2d(box2d, shift_ratio=0.1):
     ''' Randomly shift box center, randomly scale width and height 
@@ -92,15 +272,18 @@ def extract_frustum_data(idx_filename, split, output_filename, viz=False,
     all_cnt = 0
     for data_idx in tqdm(data_idx_list):
         #print('------------- ', data_idx)
+        # st()
         calib = dataset.get_calibration(data_idx) # 3 by 4 matrix
         if with_image:
-            image_filename = os.path.join(dataset.image_dir, '%06d.png'%(data_idx))#dataset.get_image(data_idx)#(370, 1224, 3),uint8
+            image_filename = os.path.join(dataset.image_dir, '%d.png'%(data_idx))#dataset.get_image(data_idx)#(370, 1224, 3),uint8
         objects = dataset.get_label_objects(data_idx)
         pc_velo = dataset.get_lidar(data_idx)
         pc_rect = np.zeros_like(pc_velo)
+        # st()
         pc_rect[:,0:3] = calib.project_velo_to_rect(pc_velo[:,0:3])
-        pc_rect[:,3] = pc_velo[:,3]
+        # pc_rect[:,3] = pc_velo[:,3]
         img = dataset.get_image(data_idx)
+        # st()
         img_height, img_width, img_channel = img.shape
         _, pc_image_coord, img_fov_inds = get_lidar_in_image_fov(pc_velo[:,0:3],
             calib, 0, 0, img_width, img_height, True)
@@ -495,10 +678,10 @@ if __name__=='__main__':
     args = parser.parse_args()
 
     if args.car_only:
-        type_whitelist = ['Car']
+        type_whitelist = ['car']
         output_prefix = 'frustum_caronly_'
     else:
-        type_whitelist = ['Car', 'Pedestrian', 'Cyclist']
+        type_whitelist = ['car', 'pedestrian', 'cyclist']
         output_prefix = 'frustum_carpedcyc_'
 
     if args.with_image:
@@ -533,12 +716,13 @@ if __name__=='__main__':
 
     if args.gen_train:
         print('Start gen_train...')
+        # st()
         imagesets_file = os.path.join(BASE_DIR, 'image_sets/train.txt')
         extract_frustum_data(\
             imagesets_file,
             'training',
             os.path.join(BASE_DIR, output_prefix+'train.pickle'), 
-            viz=False, perturb_box2d=True, augmentX=5,
+            viz=False, perturb_box2d=False, augmentX=5,
             type_whitelist=type_whitelist,
             with_image=args.with_image)
         get_box3d_dim_statistics(imagesets_file, type_whitelist,'train')

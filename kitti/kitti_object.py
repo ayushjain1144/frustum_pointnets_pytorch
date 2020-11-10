@@ -1,3 +1,8 @@
+''' Helper class and functions for loading KITTI objects
+
+Author: Charles R. Qi
+Date: September 2017
+'''
 from __future__ import print_function
 
 import os
@@ -29,9 +34,9 @@ class kitti_object(object):
         self.split_dir = os.path.join(root_dir, split)
 
         if split == 'training':
-            self.num_samples = 7481
+            self.num_samples = len(os.listdir(os.path.join(self.split_dir, 'image_2')))
         elif split == 'testing':
-            self.num_samples = 7518
+            self.num_samples = len(os.listdir(os.path.join(self.split_dir, 'image_2')))
         else:
             print('Unknown split: %s' % (split))
             exit(-1)
@@ -46,24 +51,78 @@ class kitti_object(object):
 
     def get_image(self, idx):
         assert(idx<self.num_samples) 
-        img_filename = os.path.join(self.image_dir, '%06d.png'%(idx))
+        img_filename = os.path.join(self.image_dir, '%d.png'%(idx))
         return utils.load_image(img_filename)
 
     def get_lidar(self, idx): 
         assert(idx<self.num_samples) 
-        lidar_filename = os.path.join(self.lidar_dir, '%06d.bin'%(idx))
-        # return utils.load_velo_scan(lidar_filename)
-        return utils.load_pc(lidar_filename)
+        lidar_filename = os.path.join(self.lidar_dir, '%d.npy'%(idx))
+        return utils.load_velo_scan(lidar_filename)
 
     def get_calibration(self, idx):
         assert(idx<self.num_samples) 
-        calib_filename = os.path.join(self.calib_dir, '%06d.txt'%(idx))
+        calib_filename = os.path.join(self.calib_dir, '%d.txt'%(idx))
         return utils.Calibration(calib_filename)
 
     def get_label_objects(self, idx):
         assert(idx<self.num_samples and self.split=='training') 
-        label_filename = os.path.join(self.label_dir, '%06d.txt'%(idx))
+        label_filename = os.path.join(self.label_dir, '%d.txt'%(idx))
         return utils.read_label(label_filename)
+        
+    def get_depth_map(self, idx):
+        pass
+
+    def get_top_down(self, idx):
+        pass
+
+class kitti_object_video(object):
+    ''' Load data for KITTI videos '''
+    def __init__(self, img_dir, lidar_dir, calib_dir):
+        self.calib = utils.Calibration(calib_dir, from_video=True)
+        self.img_dir = img_dir
+        self.lidar_dir = lidar_dir
+        self.img_filenames = sorted([os.path.join(img_dir, filename) \
+            for filename in os.listdir(img_dir)])
+        self.lidar_filenames = sorted([os.path.join(lidar_dir, filename) \
+            for filename in os.listdir(lidar_dir)])
+        print(len(self.img_filenames))
+        print(len(self.lidar_filenames))
+        #assert(len(self.img_filenames) == len(self.lidar_filenames))
+        self.num_samples = len(self.img_filenames)
+
+    def __len__(self):
+        return self.num_samples
+
+    def get_image(self, idx):
+        assert(idx<self.num_samples) 
+        img_filename = self.img_filenames[idx]
+        return utils.load_image(img_filename)
+
+    def get_lidar(self, idx): 
+        assert(idx<self.num_samples) 
+        lidar_filename = self.lidar_filenames[idx]
+        return utils.load_velo_scan(lidar_filename)
+
+    def get_calibration(self, unused):
+        return self.calib
+
+def viz_kitti_video():
+    video_path = os.path.join(ROOT_DIR, 'dataset/2011_09_26/')
+    dataset = kitti_object_video(\
+        os.path.join(video_path, '2011_09_26_drive_0023_sync/image_02/data'),
+        os.path.join(video_path, '2011_09_26_drive_0023_sync/velodyne_points/data'),
+        video_path)
+    print(len(dataset))
+    for i in range(len(dataset)):
+        img = dataset.get_image(0)
+        pc = dataset.get_lidar(0)
+        Image.fromarray(img).show()
+        draw_lidar(pc)
+        raw_input()
+        pc[:,0:3] = dataset.get_calibration().project_velo_to_rect(pc[:,0:3])
+        draw_lidar(pc)
+        raw_input()
+    return
 
 def show_image_with_boxes(img, objects, calib, show3d=True):
     ''' Show image with 2D bounding boxes '''
