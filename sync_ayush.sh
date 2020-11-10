@@ -1,0 +1,1 @@
+rsync -av ./ ayushj2@matrix.ml.cmu.edu:/home/ayushj2/frustum_pointnets_pytorch
