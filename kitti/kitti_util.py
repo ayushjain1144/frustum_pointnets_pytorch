@@ -12,6 +12,9 @@ import cv2
 import os
 import ipdb
 st = ipdb.set_trace
+import torch
+import utils_geom
+
 class Object3d(object):
     ''' 3d object label '''
     def __init__(self, label_file_line):
@@ -31,13 +34,15 @@ class Object3d(object):
         self.ymax = data[7] # bottom
         self.box2d = np.array([self.xmin,self.ymin,self.xmax,self.ymax])
         
-        # extract 3d bounding box information
-        self.h = data[8] # box height
-        self.w = data[9] # box width
-        self.l = data[10] # box length (in meters)
-        self.t = (data[11],data[12],data[13]) # location (x,y,z) in camera coord.
-        self.ry = data[14] # yaw angle (around Y-axis in camera coordinates) [-pi..pi]
-
+        # # extract 3d bounding box information
+        # self.h = data[8] # box height
+        # self.w = data[9] # box width
+        # self.l = data[10] # box length (in meters)
+        # self.t = (data[11],data[12],data[13]) # location (x,y,z) in camera coord.
+        # self.ry = data[14] # yaw angle (around Y-axis in camera coordinates) [-pi..pi]
+        # f.write(f"{type_name} 0 3 0 {xmin} {ymin} {xmax} {ymax} {hei} {wid} {dep} {xc} {yc} {zc} {theta}\n")
+        # [xc, yc, zc, wid, hei, dep, 0, theta, 0]
+        self.box3d = data[8:]
     def print_object(self):
         print('Type, truncation, occlusion, alpha: %s, %d, %d, %f' % \
             (self.type, self.truncation, self.occlusion, self.alpha))
@@ -91,15 +96,16 @@ class Calibration(object):
         self.pix_T_cam = calibs['pix_T_cam'].reshape(4, 4)
         # self.pix_T_cam = np.reshape(self.pix_T_cam, [3,4])
 
-        self.P = inverse_rigid_trans(self.pix_T_cam[:3, :])
+        self.P = self.pix_T_cam[:3, :]
         # Rigid transform from Velodyne coord to reference camera coord
         self.camX_T_origin = calibs['camX_T_origin'].reshape(4, 4)
         self.origin_T_camX = np.linalg.inv(self.camX_T_origin)
-        self.V2C = self.origin_T_camX[:3, :]
+        eye_mat = np.eye(4, 4, dtype=float)
+        self.V2C = eye_mat[:3, :]
         self.V2C = np.reshape(self.V2C, [3,4])
-        self.C2V = inverse_rigid_trans(self.V2C)
+        self.C2V = inverse_rigid_trans(eye_mat)
         # Rotation from reference camera coord to rect camera coord
-        self.camX_T_camR = calibs['camX_T_camR'].reshape(4, 4)
+        # self.camX_T_camR = calibs['camX_T_camR'].reshape(4, 4)
         # self.R0 = calibs['R0_rect']
         self.origin_T_camX = np.linalg.inv(self.camX_T_origin)
         self.R0 = self.camX_T_origin[:3, :3]
@@ -199,6 +205,7 @@ class Calibration(object):
             Output: nx2 points in image2 coord.
         '''
         pts_3d_rect = self.cart2hom(pts_3d_rect)
+
         pts_2d = np.transpose(np.dot(self.pix_T_cam[:3, :], np.transpose(pts_3d_rect)))
         # pts_2d = np.dot(pts_3d_rect, np.transpose(self.P)) # nx3
         pts_2d[:,0] /= pts_2d[:,2]
@@ -320,35 +327,46 @@ def compute_box_3d(obj, P):
             corners_2d: (8,2) array in left image coord.
             corners_3d: (8,3) array in in rect camera coord.
     '''
-    # compute rotational matrix around yaw axis
-    R = roty(obj.ry)    
+    st()
+    pix_T_cam = np.zeros((4, 4))
+    pix_T_cam[:3, :] = P
+    pix_T_cam[3] = [0, 0, 0, 1]
+    corners_3d = numpy.array(obj.box3d).reshape((8, 3))
+    # corners_3d = utils_geom.transform_boxes3D_to_corners_py(box)
+    corners_3d_in_2d = utils_geom.apply_pix_T_cam(torch.from_numpy(pix_T_cam).unsqueeze(0), torch.from_numpy(corners_3d).unsqueeze(0))
 
-    # 3d bounding box dimensions
-    l = obj.l;
-    w = obj.w;
-    h = obj.h;
+    return corners_3d_in_2d.squeeze(0).numpy(), corners_3d
+
+
+    # # comput rotational matrix around yaw axis
+    # R = roty(obj.ry)    
+
+    # # 3d bounding box dimensions
+    # l = obj.l;
+    # w = obj.w;
+    # h = obj.h;
     
-    # 3d bounding box corners
-    x_corners = [l/2,l/2,-l/2,-l/2,l/2,l/2,-l/2,-l/2];
-    y_corners = [0,0,0,0,-h,-h,-h,-h];
-    z_corners = [w/2,-w/2,-w/2,w/2,w/2,-w/2,-w/2,w/2];
+    # # 3d bounding box corners
+    # x_corners = [l/2,l/2,-l/2,-l/2,l/2,l/2,-l/2,-l/2];
+    # y_corners = [0,0,0,0,-h,-h,-h,-h];
+    # z_corners = [w/2,-w/2,-w/2,w/2,w/2,-w/2,-w/2,w/2];
     
-    # rotate and translate 3d bounding box
-    corners_3d = np.dot(R, np.vstack([x_corners,y_corners,z_corners]))
-    #print corners_3d.shape
-    corners_3d[0,:] = corners_3d[0,:] + obj.t[0];
-    corners_3d[1,:] = corners_3d[1,:] + obj.t[1];
-    corners_3d[2,:] = corners_3d[2,:] + obj.t[2];
-    #print 'cornsers_3d: ', corners_3d 
-    # only draw 3d bounding box for objs in front of the camera
-    if np.any(corners_3d[2,:]<0.1):
-        corners_2d = None
-        return corners_2d, np.transpose(corners_3d)
+    # # rotate and translate 3d bounding box
+    # corners_3d = np.dot(R, np.vstack([x_corners,y_corners,z_corners]))
+    # #print corners_3d.shape
+    # corners_3d[0,:] = corners_3d[0,:] + obj.t[0];
+    # corners_3d[1,:] = corners_3d[1,:] + obj.t[1];
+    # corners_3d[2,:] = corners_3d[2,:] + obj.t[2];
+    # #print 'cornsers_3d: ', corners_3d 
+    # # only draw 3d bounding box for objs in front of the camera
+    # if np.any(corners_3d[2,:]<0.1):
+    #     corners_2d = None
+    #     return corners_2d, np.transpose(corners_3d)
     
-    # project the 3d bounding box into the image plane
-    corners_2d = project_to_image(np.transpose(corners_3d), P);
-    #print 'corners_2d: ', corners_2d
-    return corners_2d, np.transpose(corners_3d)
+    # # project the 3d bounding box into the image plane
+    # corners_2d = project_to_image(np.transpose(corners_3d), P);
+    # #print 'corners_2d: ', corners_2d
+    # return corners_2d, np.transpose(corners_3d)
 
 
 def compute_orientation_3d(obj, P):
@@ -358,7 +376,7 @@ def compute_orientation_3d(obj, P):
             orientation_2d: (2,2) array in left image coord.
             orientation_3d: (2,3) array in in rect camera coord.
     '''
-    
+    assert(False)
     # compute rotational matrix around yaw axis
     R = roty(obj.ry)
    

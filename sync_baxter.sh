@@ -1,0 +1,1 @@
+rsync -av ./ nel@128.2.176.81:~/gsarch/frustum_pointnets_pytorch
