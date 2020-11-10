@@ -321,9 +321,10 @@ def extract_frustum_data(idx_filename, split, output_filename, viz=False,
                 label = np.zeros((pc_in_box_fov.shape[0]))#(1607,)
                 label[inds] = 1
                 # Get 3D BOX heading
-                heading_angle = obj.ry#0.01
+                heading_angle = 0.01
                 # Get 3D BOX size
-                box3d_size = np.array([obj.l, obj.w, obj.h])#array([1.2 , 0.48, 1.89])
+                box3d_size = utils.get_box3d_size(box3d_pts_3d)
+                # box3d_size = np.array([obj.l, obj.w, obj.h])#array([1.2 , 0.48, 1.89])
 
                 # Reject too far away object or object without points
                 if ymax-ymin<25 or np.sum(label)==0:
@@ -394,7 +395,7 @@ def get_box3d_dim_statistics(idx_filename, type_whitelist=['Car','Pedestrian','C
             if obj.type not in type_whitelist:continue
             dimension_list.append(np.array([obj.l,obj.w,obj.h])) 
             type_list.append(obj.type) 
-            ry_list.append(obj.ry)
+            ry_list.append(0.01)
 
     dimensions = np.array(dimension_list)
     if len(type_whitelist) == 1:

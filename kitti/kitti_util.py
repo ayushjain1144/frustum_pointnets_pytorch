@@ -43,6 +43,8 @@ class Object3d(object):
         # f.write(f"{type_name} 0 3 0 {xmin} {ymin} {xmax} {ymax} {hei} {wid} {dep} {xc} {yc} {zc} {theta}\n")
         # [xc, yc, zc, wid, hei, dep, 0, theta, 0]
         self.box3d = data[8:]
+        self.l, self.w, self.h = get_box3d_size(np.array(self.box3d).reshape(8, 3))
+        
     def print_object(self):
         print('Type, truncation, occlusion, alpha: %s, %d, %d, %f' % \
             (self.type, self.truncation, self.occlusion, self.alpha))
@@ -52,7 +54,6 @@ class Object3d(object):
         #     (self.h, self.w, self.l))
         # print('3d bbox location, ry: (%f, %f, %f), %f' % \
         #     (self.t[0],self.t[1],self.t[2],self.ry))
-
 
 class Calibration(object):
     ''' Calibration matrices and utils
@@ -319,6 +320,16 @@ def project_to_image(pts_3d, P):
     pts_2d[:,1] /= pts_2d[:,2]
     return pts_2d[:,0:2]
 
+
+def get_box3d_size(box3d_pts_3d):
+    xmin = np.min(box3d_pts_3d[:, 0])
+    xmax  = np.max(box3d_pts_3d[:, 0])
+    ymin = np.min(box3d_pts_3d[:, 1])
+    ymax  = np.max(box3d_pts_3d[:, 1])
+    zmin = np.min(box3d_pts_3d[:, 2])
+    zmax  = np.max(box3d_pts_3d[:, 2])
+
+    return np.array([xmax-xmin, ymax-ymin, zmax-zmin])
 
 def compute_box_3d(obj, P):
     ''' Takes an object and a projection matrix (P) and projects the 3d
